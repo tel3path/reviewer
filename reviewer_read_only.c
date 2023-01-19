@@ -2,10 +2,8 @@
  * This version can be run in a non-CHERI environment to show the difference
  * between the two environments. 
  * 
- * This is based on the read-only employee example at
- * https://github.com/capablevms/cheri-examples/blob/master/employee/include/employee.h
- * and on the CHERI adversarial example of a heap overflow at 
- * https://ctsrd-cheri.github.io/cheri-exercises/exercises/buffer-overflow-heap/index.html.
+ * This file is based on the read-only employee example at
+ * https://github.com/capablevms/cheri-examples/blob/master/employee/include/employee.h.
  *
  */
 
@@ -142,6 +140,55 @@ int main()
     // to edit their own review.
     try_improve_privatereview(&reviewer, biggersz);
 #endif
+
+    // This code will be unreachable in a CHERI environment,
+    // but it is included to make the point.
+    
+    // Now we get to the attack part.
+    // Hopefully this will overwrite the beginning of the reviewer's real name.
+    // In a CHERI environment this might crash (if it were reachable).
+    // In a non-CHERI environment this might not result in any visible changes.
+    printf("\nOverflowing reviewer username by 1\n");
+    memset(reviewer.username + smallsz, 'A', 2);
+    
+    // Now we can see the changes, if any.
+    print_details(&reviewer);
+    
+    // Overflow the username even more, which in a CHERI
+    // environment should crash if it hasn't already.
+    // In a non-CHERI environment this can change "Miss Trunchbull" to "AAss Trunchbull"
+    const size_t oversz = reviewer.realname - reviewer.username + 2 - smallsz;
+    printf("\nOverflowing reviewer username by %zx\n", oversz);
+    memset(reviewer.username + smallsz, 'A', oversz);
+    
+    print_details(&reviewer);
+    
+    // Now try overflowing the private review, with its larger size and wider bounds.
+    // In a non-CHERI environment this might not result in any visible changes.
+    printf("\nOverflowing private remarks by 1\n");
+    memset(reviewer.privatereview + biggersz, 'A', 2);
+    
+    print_details(&reviewer);
+    
+    // Now try overflowing the private review even more.
+    // In a non-CHERI environment this might change the start
+    // of the public review from "While" to "!hile"
+    const size_t overbigger = reviewer.publicreview - reviewer.privatereview + 2 - biggersz;
+    printf("\nOverflowing private review by %zx\n", overbigger);
+    // TODO refactor this to something less clumsy
+    if(overbigger >= 1)
+        memset(reviewer.privatereview + biggersz, 'A', 1);
+    if(overbigger >= 2)
+        memset(reviewer.privatereview + biggersz+1, '+', 1);
+    if(overbigger >= 3)
+        memset(reviewer.privatereview + biggersz+2, '+', 1);
+    if(overbigger >= 4)
+        memset(reviewer.privatereview + biggersz+3, '\n', 1);
+    if(overbigger >= 5)
+        memset(reviewer.privatereview + biggersz+4, '!', overbigger-5);
+    
+    // We can see all the changes we have made, if any
+    print_details(&reviewer);
 
     return 0;
 }
