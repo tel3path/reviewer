@@ -48,79 +48,40 @@ int main()
     size_t smallsz = 0x20;
     size_t biggersz = 0x1001;
     
-    // Prompt the user for input.
-    printf("Create your review!\n");
+    // Populate the members of the reviewer struct.
     username = malloc(smallsz);
-    printf("Enter your user name: \n");
-    fgets(username, smallsz, stdin);
+    strcpy(username, "Reviewer 2");
     
-    // Now establish the actual length of the input
-    // TODO decompose this repeated code
-    size_t szn = (size_t)strlen(username);
-    // we expect something between 1 and 32
-    assert(szn > 0);
-    assert(szn <= smallsz);
-    printf("size is %zu\n", szn);
-    // trim any newlines off the end of the input
-    if(username[szn-1] == '\n') {
-        username[szn-1] = '\0';
-        szn = (size_t)strlen(username);
-    }
+    // Now establish the actual length of the string
+    size_t szn = actual_input_length(username, smallsz);
+    printf("username size is %zu\n", szn);
     
     // Now we prompt them for their real name:
     // TODO should only be visible to the reviewer
     // and the committee
     realname = malloc(smallsz);
-    printf("Enter your real name: \n");
-    // Get and save the text
-    fgets(realname, smallsz, stdin);
+    strcpy(realname, "Baba Yaga");
     
-    // Establish the actual length of the input
-    // TODO decompose this repeated code
-    size_t szp = (size_t)strlen(realname);
-    // we expect something between 1 and 32
-    assert(szp > 0);
-    assert(szp <= smallsz);
-    printf("size is %zu\n", szp);
-    // trim any newlines off the end of the input
-    if(realname[szp-1] == '\n') {
-        realname[szp-1] = '\0';
-        szp = (size_t)strlen(realname);
-    }
+    // Establish the actual length of the string
+    size_t szp = actual_input_length(realname, smallsz);
+    printf("realname size is %zu\n", szp);
     
-    // Now we prompt them for their private review:
+    // The private review, only to be seen by committee members
     privatereview = malloc(biggersz);
-    printf("Enter your private remarks: \n");
-
-    // Get and save the text
-    fgets(privatereview, biggersz, stdin);
-    size_t szprr = (size_t)strlen(privatereview);
-    // we expect something between 1 and 4097
-    assert(szprr > 0);
-    assert(szprr <= biggersz);
-    printf("size is %zu\n", szprr);
-    if(privatereview[szprr-1] == '\n') {
-        privatereview[szprr-1] = '\0';
-        szprr = (size_t)strlen(privatereview);
-    }
-
-    // Now we prompt them for their public review:
-    publicreview = malloc(biggersz);
-    // public review
-    printf("Enter your public review: \n");
-    // Get and save the text
-    fgets(publicreview, biggersz, stdin);
-    size_t szpur = (size_t)strlen(publicreview);
-    // we expect something between 1 and 4097
-    assert(szpur > 0);
-    assert(szpur <= biggersz);
-    printf("size is %zu\n", szpur);
-    if(publicreview[szpur-1] == '\n') {
-        publicreview[szpur-1] = '\0';
-        szpur = (size_t)strlen(publicreview);
-    }
-
+    strcpy(privatereview, "I cannot believe I read this appalling piece of dreck from start to finish. The authors should be ashamed, and I hope I get an opportunity to tell them so to their faces.");
     
+    // establish the actual length of the string
+    size_t szprr = actual_input_length(privatereview, biggersz);
+    printf("privatereview size is %zu\n", szprr);
+
+    // The public review, only to be seen by committee members and the authors
+    publicreview = malloc(biggersz);
+    strcpy(publicreview, "I am a little unclear as to the contribution. I think the authors could strengthen their case considerably if they conducted an RCT. Weak reject.");
+    
+    // establish the actual length of the string
+    size_t szpur = actual_input_length(publicreview, biggersz);
+    printf("publicreview size is %zu\n", szpur);
+
 // If we are in a CHERI purecap environment, show the representable length
 // as well as the distance between the addresses of the members.
 // If we are not in a CHERI purecap environment, just show the distances.
@@ -145,10 +106,9 @@ int main()
     // in each environment. 
     assert((size_t)(username + smallsz) <= (size_t)realname); 
     assert((size_t)(privatereview + biggersz) <= (size_t)publicreview);
-    // TODO review the assumptions underlying these asserts,
-    // as they don't seem to hold any more.
-    //assert((ptraddr_t)(realname + szp + szp/2) > (ptraddr_t)privatereview); 
-    //assert((ptraddr_t)(privatereview + szprr + szprr/2) > (ptraddr_t)publicreview);
+    //assert((size_t)(realname + szp + szp/2) > (size_t)privatereview); 
+    // TODO redefine the assert, as the assumption doesn't hold
+    //assert((size_t)(privatereview + szprr + szprr/2) > (size_t)publicreview);
     
     // Echo the user's input back to them.
     printf("Username: %s\n", username);
@@ -163,17 +123,17 @@ int main()
     reviewer.publicreview = publicreview;
     reviewer.privileges = privileges;
     
-#ifdef __CHERI_PURE_CAPABILITY_
-    if(!can_write(&reviewer)) {
+#ifdef __CHERI_PURE_CAPABILITY__
+    if(can_write(&reviewer) == false) {        
         struct reviewer *ro_reviewer = set_read_only(&reviewer);
         assert((cheri_perms_get(ro_reviewer) & CHERI_PERM_STORE) == 0);
         print_details(ro_reviewer);
         char *newprivatereview = malloc(biggersz);
         strcpy(newprivatereview, "5 ***** strong accept. This author deserves two Nobels and an ice cream.\n");
-        printf("%s", newprivatereview);
+        printf("\nAttempting to change the private review to:\n%s\n", newprivatereview);
 
         printf(
-            "\nThe struct is read-only so trying to change the review to \" %s \" will make the program "
+            "\nThe struct is read-only so trying to change the review to:\n %s will make the program "
             "crash...\n",
             newprivatereview);
 
@@ -181,9 +141,11 @@ int main()
         printf("Attempting to change the private review.\n");
         change_privatereview(ro_reviewer, newprivatereview);
         print_details(ro_reviewer);
+        
+        // set the original reviewer back to read-only
+        reviewer = *ro_reviewer;
     }
-#endif
-    
+# else
     // Now we will try to edit the private review,
     // replacing it with a more flattering one.
     // TODO: create another reviewer so that this action
@@ -196,6 +158,7 @@ int main()
     // If the reviewer doesn't have write privileges, 
     // the change will not be made.
     change_privatereview(&reviewer, newprivatereview);
+#endif
 
     // Now we get to the attack part.
     // Hopefully this will overwrite the beginning of the reviewer's real name.
