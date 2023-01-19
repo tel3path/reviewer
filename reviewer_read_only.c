@@ -156,7 +156,7 @@ int main()
     
     // Overflow the username even more, which in a CHERI
     // environment should crash if it hasn't already.
-    // In a non-CHERI environment this can change "Miss Trunchbull" to "AAss Trunchbull"
+    // In a non-CHERI environment this can change "Baba Yaga" to "AAba Yaga"
     const size_t oversz = reviewer.realname - reviewer.username + 2 - smallsz;
     printf("\nOverflowing reviewer username by %zx\n", oversz);
     memset(reviewer.username + smallsz, 'A', oversz);
