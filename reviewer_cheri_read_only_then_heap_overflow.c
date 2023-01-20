@@ -1,24 +1,17 @@
 /** 
- * This version can be run in both a CHERI and a non-CHERI environment to show the 
- * difference between the two environments. 
+ * This version can be run in a CHERI environment to show the effects of 
+ * using capabilities to set a data structure to read-only,
+ * then without directly trying to edit the read-only members of the structure
+ * (which would crash in a CHERI environment; see reviewer_read_only.c),
+ * attempt a heap buffer overflow.
  * 
  * This file is based on the read-only employee example at
  * https://github.com/capablevms/cheri-examples/blob/master/employee/include/employee.h.
  * In a CHERI environment, it uses capabilities to enforce read-only privileges.
- * Any attempt to write data to the members of the reviewer struct that have
- * been write-protected will crash the program.
- * In a non-CHERI environment, these privileges are weakly enforced and the program
- * will not crash, but display a message and continue.
  * 
  * The program goes on to attempt a buffer overflow attack,
  * which is based on the CHERI adversarial example of a heap overflow at 
  * https://ctsrd-cheri.github.io/cheri-exercises/exercises/buffer-overflow-heap/index.html.
- *
- * In a CHERI environment, this attack code will be unreachable.
- * (To see the effect of this attack on a CHERI read-only data structure that 
- * hasn't been crashed, look at reviewer_cheri_read_only_then_heap_overflow.c.)
- *
- * In a non-CHERI environment, this attack should succeed in corrupting some of the data.
  *
  */
 
@@ -95,10 +88,6 @@ int main()
     size_t szpur = actual_input_length(publicreview, biggersz);
     printf("publicreview size is %zu\n", szpur);
 
-// If we are in a CHERI purecap environment, show the representable length
-// as well as the distance between the addresses of the members.
-// If we are not in a CHERI purecap environment, just show the distances.
-#ifdef __CHERI_PURE_CAPABILITY__
     printf("smallsz=%zx, CRRL(smallsz)=%zx\n", smallsz,
         __builtin_cheri_round_representable_length(smallsz));
     printf("biggersz=%zx, CRRL(biggersz)=%zx\n", biggersz,
@@ -106,11 +95,6 @@ int main()
     printf("username=%#p realname=%#p diff=%tx\n", username, realname, realname - username);
     printf("realname=%#p privatereview=%#p diff=%tx\n", realname, privatereview, privatereview - realname);
     printf("privatereview=%#p publicreview=%#p diff=%tx\n", privatereview, publicreview, publicreview - privatereview);
-#else
-    printf("username=%#p realname=%#p diff=%tx\n", username, realname, realname - username);
-    printf("realname=%#p privatereview=%#p diff=%tx\n", realname, privatereview, privatereview - realname);
-    printf("privatereview=%#p publicreview=%#p diff=%tx\n", privatereview, publicreview, publicreview - privatereview);
-#endif
 
     // These addresses need to be close to each other in order
     // to make the point we're trying to make.
@@ -130,81 +114,59 @@ int main()
     reviewer.publicreview = publicreview;
     reviewer.privileges = privileges;
 
-// If we are in a CHERI environment, protect the reviewer by setting
-// the relevant struct members (in this case all of them)
-// to read-only.    
-#ifdef __CHERI_PURE_CAPABILITY__
-    if(can_write(&reviewer) == false) {        
-        struct reviewer *ro_reviewer = set_read_only(&reviewer);
-        assert((cheri_perms_get(ro_reviewer) & CHERI_PERM_STORE) == 0);
-        print_details(ro_reviewer);
+    // Protect the reviewer by setting
+    // the relevant struct members (in this case all of them)
+    // to read-only.           
+    struct reviewer *ro_reviewer = set_read_only(&reviewer);
+    assert((cheri_perms_get(ro_reviewer) & CHERI_PERM_STORE) == 0);
+    print_details(ro_reviewer);
 
-        printf("\nThe struct is read-only so trying to change the review will make the program crash...\n");
-        fflush(stdout);
-        
-        try_improve_privatereview(ro_reviewer, biggersz, false);
-        
-        print_details(ro_reviewer);
-    }
-# else
-    // Try editing the private review in a non-CHERI environment,
-    // by simply checking the write privileges and refusing if none are found.
-    // We can then go on to 
-    // TODO: create another reviewer so that this action
-    // actually makes sense. Right now the user is forbidden
-    // to edit their own review.
-    try_improve_privatereview(&reviewer, biggersz, false);
-    print_details(&reviewer);
-#endif
-
-    // This code will be unreachable in a CHERI environment,
-    // but it is included to make the point.
+    printf("\nThe struct has been set to read-only.\n");
+    fflush(stdout);
     
     // Now we get to the attack part.
     // Hopefully this will overwrite the beginning of the reviewer's real name.
-    // In a CHERI environment this might crash (if it were reachable).
-    // In a non-CHERI environment this might not result in any visible changes.
+    // In a CHERI environment this should crash.
     printf("\nOverflowing reviewer username by 1\n");
-    memset(reviewer.username + smallsz, 'A', 2);
+    memset(ro_reviewer->username + smallsz, 'A', 2);
     
     // Now we can see the changes, if any.
-    print_details(&reviewer);
+    print_details(ro_reviewer);
     
     // Overflow the username even more, which in a CHERI
     // environment should crash if it hasn't already.
-    // In a non-CHERI environment this can change "Baba Yaga" to "AAba Yaga"
-    const size_t oversz = reviewer.realname - reviewer.username + 2 - smallsz;
+    const size_t oversz = ro_reviewer->realname - ro_reviewer->username + 2 - smallsz;
     printf("\nOverflowing reviewer username by %zx\n", oversz);
-    memset(reviewer.username + smallsz, 'A', oversz);
+    memset(ro_reviewer->username + smallsz, 'A', oversz);
     
-    print_details(&reviewer);
+    print_details(ro_reviewer);
     
     // Now try overflowing the private review, with its larger size and wider bounds.
     // In a non-CHERI environment this might not result in any visible changes.
     printf("\nOverflowing private remarks by 1\n");
-    memset(reviewer.privatereview + biggersz, 'A', 2);
+    memset(ro_reviewer->privatereview + biggersz, 'A', 2);
     
-    print_details(&reviewer);
+    print_details(ro_reviewer);
     
     // Now try overflowing the private review even more.
     // In a non-CHERI environment this might change the start
     // of the public review from "While" to "!hile"
-    const size_t overbigger = reviewer.publicreview - reviewer.privatereview + 2 - biggersz;
+    const size_t overbigger = ro_reviewer->publicreview - ro_reviewer->privatereview + 2 - biggersz;
     printf("\nOverflowing private review by %zx\n", overbigger);
     // TODO refactor this to something less clumsy
     if(overbigger >= 1)
-        memset(reviewer.privatereview + biggersz, 'A', 1);
+        memset(ro_reviewer->privatereview + biggersz, 'A', 1);
     if(overbigger >= 2)
-        memset(reviewer.privatereview + biggersz+1, '+', 1);
+        memset(ro_reviewer->privatereview + biggersz+1, '+', 1);
     if(overbigger >= 3)
-        memset(reviewer.privatereview + biggersz+2, '+', 1);
+        memset(ro_reviewer->privatereview + biggersz+2, '+', 1);
     if(overbigger >= 4)
-        memset(reviewer.privatereview + biggersz+3, '\n', 1);
+        memset(ro_reviewer->privatereview + biggersz+3, '\n', 1);
     if(overbigger >= 5)
-        memset(reviewer.privatereview + biggersz+4, '!', overbigger-5);
+        memset(ro_reviewer->privatereview + biggersz+4, '!', overbigger-5);
     
     // We can see all the changes we have made, if any
-    print_details(&reviewer);
+    print_details(ro_reviewer);
 
     return 0;
 }
