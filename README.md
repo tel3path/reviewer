@@ -17,10 +17,10 @@ OR
 1. Use capabilities to set a data structure to read-only. 
 2. Try to write to the read-only data structure, and crash. 
 3. The heap overflow is unreachable.
-       - reviewer_read_only.c
+    - reviewer_read_only.c
 
 OR
 
 1. Use capabilities to set a data structure to read-only. 
 2. Use a heap overflow to try to corrupt the read-only data.
-       - reviewer_cheri_read_only_then_heap_overflow.c
+    - reviewer_cheri_read_only_then_heap_overflow.c
